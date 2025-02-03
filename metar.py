@@ -24,8 +24,8 @@ except ImportError:
 # NeoPixel LED Configuration
 LED_COUNT		= 50			# Number of LED pixels.
 LED_PIN			= board.D18		# GPIO pin connected to the pixels (18 is PCM).
-LED_BRIGHTNESS		= 0.5			# Float from 0.0 (min) to 1.0 (max)
-LED_ORDER		= neopixel.GRB		# Strip type and colour ordering
+LED_BRIGHTNESS		= 0.3			# Float from 0.0 (min) to 1.0 (max)
+LED_ORDER		= neopixel.RGB		# Strip type and colour ordering
 
 COLOR_VFR		= (255,0,0)		# Green
 COLOR_VFR_FADE		= (125,0,0)		# Green Fade for wind
@@ -37,19 +37,19 @@ COLOR_LIFR		= (0,125,125)		# Magenta
 COLOR_LIFR_FADE		= (0,75,75)		# Magenta Fade for wind
 COLOR_CLEAR		= (0,0,0)		# Clear
 COLOR_LIGHTNING		= (255,255,255)		# White
-COLOR_HIGH_WINDS 	= (255,255,0) 		# Yellow
+COLOR_HIGH_WINDS 	= (0,0,0) 		# Yellow (was 255,255,0)
 
 # ----- Blink/Fade functionality for Wind and Lightning -----
 # Do you want the METARMap to be static to just show flight conditions, or do you also want blinking/fading based on current wind conditions
-ACTIVATE_WINDCONDITION_ANIMATION = False	# Set this to False for Static or True for animated wind conditions
+ACTIVATE_WINDCONDITION_ANIMATION = True	# Set this to False for Static or True for animated wind conditions
 #Do you want the Map to Flash white for lightning in the area
-ACTIVATE_LIGHTNING_ANIMATION = False		# Set this to False for Static or True for animated Lightning
+ACTIVATE_LIGHTNING_ANIMATION = True		# Set this to False for Static or True for animated Lightning
 # Fade instead of blink
 FADE_INSTEAD_OF_BLINK	= True			# Set to False if you want blinking
 # Blinking Windspeed Threshold
 WIND_BLINK_THRESHOLD	= 15			# Knots of windspeed to blink/fade
 HIGH_WINDS_THRESHOLD	= 25			# Knots of windspeed to trigger Yellow LED indicating very High Winds, set to -1 if you don't want to use this
-ALWAYS_BLINK_FOR_GUSTS	= False			# Always animate for Gusts (regardless of speeds)
+ALWAYS_BLINK_FOR_GUSTS	= True			# Always animate for Gusts (regardless of speeds)
 # Blinking Speed in seconds
 BLINK_SPEED		= 1.0			# Float in seconds, e.g. 0.5 for half a second
 # Total blinking time in seconds.
@@ -63,10 +63,10 @@ DIM_TIME_START		= datetime.time(19,0)	# Time of day to run at LED_BRIGHTNESS_DIM
 LED_BRIGHTNESS_DIM	= 0.1			# Float from 0.0 (min) to 1.0 (max)
 
 USE_SUNRISE_SUNSET 	= True			# Set to True if instead of fixed times for bright/dimming, you want to use local sunrise/sunset
-LOCATION 		= "Seattle"		# Nearby city for Sunset/Sunrise timing, refer to https://astral.readthedocs.io/en/latest/#cities for list of cities supported
+LOCATION 		= "Albany"		# Nearby city for Sunset/Sunrise timing, refer to https://astral.readthedocs.io/en/latest/#cities for list of cities supported
 
 # ----- External Display support -----
-ACTIVATE_EXTERNAL_METAR_DISPLAY = False		# Set to True if you want to display METAR conditions to a small external display
+ACTIVATE_EXTERNAL_METAR_DISPLAY = True		# Set to True if you want to display METAR conditions to a small external display
 DISPLAY_ROTATION_SPEED = 5.0			# Float in seconds, e.g 2.0 for two seconds
 
 # ----- Show a set of Legend LEDS at the end -----
@@ -129,11 +129,11 @@ print("External Display:" + str(ACTIVATE_EXTERNAL_METAR_DISPLAY))
 pixels = neopixel.NeoPixel(LED_PIN, LED_COUNT, brightness = LED_BRIGHTNESS_DIM if (ACTIVATE_DAYTIME_DIMMING and bright == False) else LED_BRIGHTNESS, pixel_order = LED_ORDER, auto_write = False)
 
 # Read the airports file to retrieve list of airports and use as order for LEDs
-with open("/home/pi/airports") as f:
+with open("/home/domenic/airports") as f:
 	airports = f.readlines()
 airports = [x.strip() for x in airports]
 try:
-	with open("/home/pi/displayairports") as f2:
+	with open("/home/domenic/displayairports") as f2:
 		displayairports = f2.readlines()
 	displayairports = [x.strip() for x in displayairports]
 	print("Using subset airports for LED display")
@@ -150,7 +150,7 @@ if len(airports) > LED_COUNT:
 
 # Retrieve METAR from aviationweather.gov data server
 # Details about parameters can be found here: https://aviationweather.gov/data/api/#/Dataserver/dataserverMetars
-url = "https://aviationweather.gov/cgi-bin/data/dataserver.php?requestType=retrieve&dataSource=metars&stationString=" + ",".join([item for item in airports if item != "NULL"]) + "&hoursBeforeNow=5&format=xml&mostRecent=true&mostRecentForEachStation=constraint"
+url = "https://aviationweather.gov/api/data/dataserver?requestType=retrieve&dataSource=metars&stationString=" + ",".join([item for item in airports if item != "NULL"]) + "&hoursBeforeNow=15&format=xml&mostRecentForEachStation=postfilter"
 print(url)
 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 Edg/86.0.622.69'})
 content = urllib.request.urlopen(req).read()
@@ -160,11 +160,13 @@ root = ET.fromstring(content)
 conditionDict = { "NULL": {"flightCategory" : "", "windDir": "", "windSpeed" : 0, "windGustSpeed" :  0, "windGust" : False, "lightning": False, "tempC" : 0, "dewpointC" : 0, "vis" : 0, "altimHg" : 0, "obs" : "", "skyConditions" : {}, "obsTime" : datetime.datetime.now() } }
 conditionDict.pop("NULL")
 stationList = []
-for metar in root.iter('METAR'):
+for metar in root.findall(".//METAR"):
 	if metar.find('station_id') is None or metar.find('station_id').text is None:
 		print("Missing station id, skipping.")
 		continue
 	stationId = metar.find('station_id').text
+	print(f"Adding station: {stationId}")  # Debugging line
+
 	if metar.find('flight_category') is None or metar.find('flight_category').text is None:
 		print("Missing flight condition for " + stationId + ", skipping.")
 		continue
